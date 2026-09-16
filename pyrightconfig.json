@@ -1,0 +1,12 @@
+{
+  "venvPath": "/home/ubuntu",
+  "venv": "isaacsim_venv",
+  "extraPaths": [
+    "/home/ubuntu/IsaacLab/source/isaaclab",
+    "/home/ubuntu/IsaacLab/source/isaaclab_assets",
+    "/home/ubuntu/IsaacLab/source/isaaclab_tasks",
+    "/home/ubuntu/IsaacLab/source/isaaclab_rl",
+    "/home/ubuntu/IsaacLab/source/isaaclab_mimic",
+    "/home/ubuntu/IsaacLab/source/isaaclab_contrib"
+  ]
+}

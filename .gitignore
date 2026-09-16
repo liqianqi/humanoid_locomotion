@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Isaac Lab / RSL-RL runs
+logs/
+outputs/
+*.pt
+*.onnx
+
+# Hydra / local overrides
+.hydra/
+
+# Editor / OS
+.vscode/
+.idea/
+.cursor/
+*.swp
+.DS_Store
+Thumbs.db

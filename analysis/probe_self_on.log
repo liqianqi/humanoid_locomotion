@@ -1,0 +1,220 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: /home/ubuntu/IsaacLab/apps/isaaclab.python.headless.kit
+
+[36m======================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: /tmp/isaaclab/logs/isaaclab_2026-09-16_10-20-20.log[0m
+[36m======================================================================================[0m
+
+[33m10:20:20 [simulation_context.py] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.[0m
+Loading user config located at: '/home/ubuntu/isaacsim_venv/lib/python3.11/site-packages/isaacsim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: /home/ubuntu/isaacsim_venv/lib/python3.11/site-packages/isaacsim/kit/logs/Kit/Isaac-Sim/5.1/kit_20260916_102009.log
+2026-09-16T02:20:09Z [53ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-09-16T02:20:10Z [307ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-09-16T02:20:10Z [313ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+2026-09-16T02:20:13Z [4,107ms] [Warning] [gpu.foundation.plugin] Skipping unsupported non-NVIDIA GPU: Intel(R) Graphics (ARL)
+2026-09-16T02:20:13Z [4,107ms] [Warning] [gpu.foundation.plugin] Skipping unsupported non-NVIDIA GPU: Intel(R) Graphics (ARL)
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 570.211.01    | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 4090          | Yes: 0 |     | 81898   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2684      | 92eee5b1.. |
+|     |                                  |        |     |            | 2         |            |
+|---------------------------------------------------------------------------------------------|
+| 1   | Intel(R) Graphics (ARL)          |        |     | 192903  MB | 8086      | 0          |
+|     |                                  |        |     |            | 7d67      | 8680677d.. |
+|     |                                  |        |     |            | 0         |            |
+|=============================================================================================|
+| OS: 24.04.4 LTS (Noble Numbat) ubuntu, Version: 24.04.4, Kernel: 6.17.0-22-generic
+| XServer Vendor: The X.Org Foundation, XServer Version: 12101011 (1.21.1.11)
+| Processor: Intel(R) Core(TM) Ultra 9 285K
+| Cores: 24 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 257204 | Free Memory: 233423
+| Total Page/Swap (MB): 15624 | Free Page/Swap: 15624
+|---------------------------------------------------------------------------------------------|
+2026-09-16T02:20:19Z [10,114ms] [Warning] [gpu.foundation.plugin] CPU performance profile is set to powersave. This profile sets the CPU to the lowest frequency reducing performance.
+2026-09-16T02:20:20Z [10,133ms] [Warning] [gpu.foundation.plugin] IOMMU is enabled.
+2026-09-16T02:20:20Z [10,133ms] [Warning] [gpu.foundation.plugin] Detected IOMMU is enabled. Running CUDA peer-to-peer bandwidth and latency validation.
+Unidirectional P2P=Enabled Bandwidth (P2P Writes) Matrix (GB/s)
+   D\D     0 
+     0 937.80 
+P2P=Enabled Latency (P2P Writes) Matrix (us)
+   GPU     0 
+     0   1.42 
+
+   CPU     0 
+     0   1.51 
+2026-09-16T02:20:20Z [10,165ms] [Warning] [omni.kvdb.plugin] Disabling key-value database because another kit process is locking it
+2026-09-16T02:20:20Z [10,309ms] [Warning] [isaaclab.envs.manager_based_env] Seed not set for the environment. The environment creation may not be deterministic.
+2026-09-16T02:21:06Z [56,813ms] [Warning] [gpu.foundation.plugin] Skipping unsupported non-NVIDIA GPU: Intel(R) Graphics (ARL)
+2026-09-16T02:21:06Z [56,813ms] [Warning] [gpu.foundation.plugin] Skipping unsupported non-NVIDIA GPU: Intel(R) Graphics (ARL)
+[INFO]: Base environment:
+	Environment device    : cuda:0
+	Environment seed      : None
+	Physics step-size     : 0.005
+	Rendering step-size   : 0.02
+	Environment step-size : 0.02
+[INFO]: Time taken for scene creation : 50.628077 seconds
+[INFO]: Scene manager:  <class InteractiveScene>
+	Number of environments: 4
+	Environment spacing   : 2.5
+	Source prim name      : /World/envs/env_0
+	Global prim paths     : ['/World/ground']
+	Replicate physics     : True
+[INFO]: Starting the simulation. This may take a few seconds. Please wait...
+[INFO]: Time taken for simulation start : 6.433078 seconds
+[33m10:21:17 [velocity_command.py] WARNING: The velocity command has the 'ranges.heading' attribute set to '(-3.141592653589793, 3.141592653589793)' but the heading command is not active. Consider setting the flag for the heading command to True.[0m
+[INFO] Command Manager:  <CommandManager> contains 1 active terms.
++------------------------------------------------+
+|              Active Command Terms              |
++-------+---------------+------------------------+
+| Index | Name          |          Type          |
++-------+---------------+------------------------+
+|   0   | base_velocity | UniformVelocityCommand |
++-------+---------------+------------------------+
+
+[INFO] Event Manager:  <EventManager> contains 2 active terms.
++--------------------------------------+
+| Active Event Terms in Mode: 'startup' |
++----------+---------------------------+
+|  Index   | Name                      |
++----------+---------------------------+
+|    0     | physics_material          |
++----------+---------------------------+
++---------------------------------------+
+|  Active Event Terms in Mode: 'reset'  |
++--------+------------------------------+
+| Index  | Name                         |
++--------+------------------------------+
+|   0    | base_external_force_torque   |
+|   1    | reset_base                   |
+|   2    | reset_robot_joints           |
++--------+------------------------------+
+
+[INFO] Recorder Manager:  <RecorderManager> contains 0 active terms.
++---------------------+
+| Active Recorder Terms |
++-----------+---------+
+|   Index   | Name    |
++-----------+---------+
++-----------+---------+
+
+[INFO] Action Manager:  <ActionManager> contains 1 active terms.
++------------------------------------+
+|  Active Action Terms (shape: 10)   |
++--------+-------------+-------------+
+| Index  | Name        |   Dimension |
++--------+-------------+-------------+
+|   0    | joint_pos   |          10 |
++--------+-------------+-------------+
+
+[INFO] Observation Manager: <ObservationManager> contains 1 groups.
++---------------------------------------------------------+
+| Active Observation Terms in Group: 'policy' (shape: (42,)) |
++-----------+---------------------------------+-----------+
+|   Index   | Name                            |   Shape   |
++-----------+---------------------------------+-----------+
+|     0     | base_lin_vel                    |    (3,)   |
+|     1     | base_ang_vel                    |    (3,)   |
+|     2     | projected_gravity               |    (3,)   |
+|     3     | velocity_commands               |    (3,)   |
+|     4     | joint_pos                       |   (10,)   |
+|     5     | joint_vel                       |   (10,)   |
+|     6     | actions                         |   (10,)   |
++-----------+---------------------------------+-----------+
+
+[INFO] Termination Manager:  <TerminationManager> contains 2 active terms.
++---------------------------------+
+|     Active Termination Terms    |
++-------+--------------+----------+
+| Index | Name         | Time Out |
++-------+--------------+----------+
+|   0   | time_out     |   True   |
+|   1   | base_contact |  False   |
++-------+--------------+----------+
+
+[INFO] Reward Manager:  <RewardManager> contains 13 active terms.
++---------------------------------------+
+|          Active Reward Terms          |
++-------+----------------------+--------+
+| Index | Name                 | Weight |
++-------+----------------------+--------+
+|   0   | track_lin_vel_xy_exp |    1.0 |
+|   1   | track_ang_vel_z_exp  |    1.0 |
+|   2   | lin_vel_z_l2         |   -0.2 |
+|   3   | ang_vel_xy_l2        |  -0.05 |
+|   4   | dof_torques_l2       | -2e-06 |
+|   5   | dof_acc_l2           | -1e-07 |
+|   6   | action_rate_l2       | -0.005 |
+|   7   | feet_air_time        |   0.75 |
+|   8   | flat_orientation_l2  |   -1.0 |
+|   9   | dof_pos_limits       |   -1.0 |
+|   10  | termination_penalty  | -200.0 |
+|   11  | feet_slide           |   -0.1 |
+|   12  | joint_deviation_hip  |   -1.0 |
++-------+----------------------+--------+
+
+[INFO] Curriculum Manager:  <CurriculumManager> contains 0 active terms.
++----------------------+
+| Active Curriculum Terms |
++-----------+----------+
+|   Index   | Name     |
++-----------+----------+
++-----------+----------+
+
+[INFO]: Completed setting up the environment...
+PROBE_JOINTS ['leg_l1_joint', 'leg_r1_joint', 'leg_l2_joint', 'leg_r2_joint', 'leg_l3_joint', 'leg_r3_joint', 'leg_l4_joint', 'leg_r4_joint', 'leg_l5_joint', 'leg_r5_joint']
+PROBE_RESULT {"self_collisions": true, "historical_gains": true, "done_count": 200, "first": [{"step": 0, "base_z": [0.3695359230041504, 0.36951884627342224, 0.3695376217365265, 0.3695376217365265], "base_force": [9054.6884765625, 9054.6884765625, 9081.45703125, 9081.44921875], "done": [true, true, true, true], "forces_env0": {"base_link": 9054.6884765625, "leg_l1_Link": 0.0, "leg_l2_Link": 1352.9012451171875, "leg_l3_Link": 3853.86962890625, "leg_l4_Link": 0.0, "leg_l5_Link": 65.27130889892578, "leg_r1_Link": 0.0, "leg_r2_Link": 1375.4158935546875, "leg_r3_Link": 4093.551025390625, "leg_r4_Link": 0.0, "leg_r5_Link": 0.0}, "q_env0": {"leg_l1_joint": 0.15102335810661316, "leg_r1_joint": 0.151085764169693, "leg_l2_joint": 0.0009823808213695884, "leg_r2_joint": -0.00305484002456069, "leg_l3_joint": -0.056081969290971756, "leg_r3_joint": 0.010813059285283089, "leg_l4_joint": 0.35070815682411194, "leg_r4_joint": 0.35190892219543457, "leg_l5_joint": -0.1700003743171692, "leg_r5_joint": 0.10102955251932144}}, {"step": 1, "base_z": [0.36950919032096863, 0.36952927708625793, 0.3694714903831482, 0.3694794178009033], "base_force": [8942.9013671875, 8938.0, 9071.4501953125, 9071.9521484375], "done": [true, true, true, true], "forces_env0": {"base_link": 8942.9013671875, "leg_l1_Link": 0.0, "leg_l2_Link": 1349.251708984375, "leg_l3_Link": 3849.0810546875, "leg_l4_Link": 0.0, "leg_l5_Link": 31.71886444091797, "leg_r1_Link": 0.0, "leg_r2_Link": 1376.030517578125, "leg_r3_Link": 3978.880859375, "leg_r4_Link": 0.0, "leg_r5_Link": 0.0}, "q_env0": {"leg_l1_joint": 0.15078741312026978, "leg_r1_joint": 0.1509721279144287, "leg_l2_joint": 0.001603094395250082, "leg_r2_joint": -0.0031726157758384943, "leg_l3_joint": -0.04886752739548683, "leg_r3_joint": 0.009946184232831001, "leg_l4_joint": 0.34644901752471924, "leg_r4_joint": 0.3492959439754486, "leg_l5_joint": -0.16727422177791595, "leg_r5_joint": 0.10185045748949051}}, {"step": 2, "base_z": [0.36955487728118896, 0.36952927708625793, 0.36948251724243164, 0.36945825815200806], "base_force": [8926.427734375, 8938.0, 8862.369140625, 9065.8203125], "done": [true, true, true, true], "forces_env0": {"base_link": 8926.427734375, "leg_l1_Link": 0.0, "leg_l2_Link": 1354.4208984375, "leg_l3_Link": 3871.08251953125, "leg_l4_Link": 0.0, "leg_l5_Link": 25.151533126831055, "leg_r1_Link": 0.0, "leg_r2_Link": 1375.8367919921875, "leg_r3_Link": 3946.34912109375, "leg_r4_Link": 0.0, "leg_r5_Link": 0.0}, "q_env0": {"leg_l1_joint": 0.1509590744972229, "leg_r1_joint": 0.15138570964336395, "leg_l2_joint": 0.001182485488243401, "leg_r2_joint": -0.003386058146134019, "leg_l3_joint": -0.04867105931043625, "leg_r3_joint": 0.010660631582140923, "leg_l4_joint": 0.3530130982398987, "leg_r4_joint": 0.34624508023262024, "leg_l5_joint": -0.17196591198444366, "leg_r5_joint": 0.10704798251390457}}], "last": {"step": 49, "base_z": [0.3694685697555542, 0.36952927708625793, 0.36952900886535645, 0.3693864941596985], "base_force": [9104.884765625, 8938.0, 8871.5166015625, 8914.181640625], "done": [true, true, true, true], "forces_env0": {"base_link": 9104.884765625, "leg_l1_Link": 0.0, "leg_l2_Link": 1363.661865234375, "leg_l3_Link": 3869.31298828125, "leg_l4_Link": 0.0, "leg_l5_Link": 46.179656982421875, "leg_r1_Link": 0.0, "leg_r2_Link": 1373.9053955078125, "leg_r3_Link": 4114.07373046875, "leg_r4_Link": 0.0, "leg_r5_Link": 0.0}, "q_env0": {"leg_l1_joint": 0.1515062153339386, "leg_r1_joint": 0.1516038179397583, "leg_l2_joint": 0.004129890818148851, "leg_r2_joint": -0.0028646625578403473, "leg_l3_joint": -0.004874780308455229, "leg_r3_joint": 0.013519996777176857, "leg_l4_joint": 0.35790711641311646, "leg_r4_joint": 0.34716328978538513, "leg_l5_joint": -0.17479144036769867, "leg_r5_joint": 0.10416629910469055}}}
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 570.211.01    | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 4090          | Yes: 0 |     | 81898   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2684      | 92eee5b1.. |
+|     |                                  |        |     |            | 2         |            |
+|---------------------------------------------------------------------------------------------|
+| 1   | Intel(R) Graphics (ARL)          |        |     | 192903  MB | 8086      | 0          |
+|     |                                  |        |     |            | 7d67      | 8680677d.. |
+|     |                                  |        |     |            | 0         |            |
+|=============================================================================================|
+| OS: 24.04.4 LTS (Noble Numbat) ubuntu, Version: 24.04.4, Kernel: 6.17.0-22-generic
+| XServer Vendor: The X.Org Foundation, XServer Version: 12101011 (1.21.1.11)
+| Processor: Intel(R) Core(TM) Ultra 9 285K
+| Cores: 24 | Logical Cores: 24
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 257204 | Free Memory: 233150
+| Total Page/Swap (MB): 15624 | Free Page/Swap: 15624
+|---------------------------------------------------------------------------------------------|
+2026-09-16T02:21:06Z [57,110ms] [Warning] [gpu.foundation.plugin] CPU performance profile is set to powersave. This profile sets the CPU to the lowest frequency reducing performance.
+Unidirectional P2P=Enabled Bandwidth (P2P Writes) Matrix (GB/s)
+   D\D     0 
+     0 862.31 
+P2P=Enabled Latency (P2P Writes) Matrix (us)
+   GPU     0 
+     0   1.33 
+
+   CPU     0 
+     0   1.45 
+2026-09-16T02:21:06Z [57,123ms] [Warning] [gpu.foundation.plugin] IOMMU is enabled.
+2026-09-16T02:21:06Z [57,124ms] [Warning] [gpu.foundation.plugin] Detected IOMMU is enabled. Running CUDA peer-to-peer bandwidth and latency validation.
+Unidirectional P2P=Enabled Bandwidth (P2P Writes) Matrix (GB/s)
+   D\D     0 
+     0 859.46 
+P2P=Enabled Latency (P2P Writes) Matrix (us)
+   GPU     0 
+     0   1.32 
+
+   CPU     0 
+     0   1.42 
+2026-09-16T02:21:07Z [57,916ms] [Warning] [omni.graph.visualization.nodes._impl.extension] No Viewport Window to add omni.graph.visualization.nodes-2.1.3 scene to
+2026-09-16T02:21:07Z [57,950ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-09-16T02:21:07Z [57,950ms] [Warning] [isaacsim.asset.importer.urdf] link imu_link has body properties (mass, inertia, or collisions) and is being merged into base_link

@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "humanoid-locomotion"
+version = "0.1.0"
+description = "RSX biped locomotion training configs"
+requires-python = ">=3.10"
+
+[tool.setuptools.package-dir]
+"" = "scripts"
+
+[tool.setuptools.packages.find]
+where = ["scripts"]
