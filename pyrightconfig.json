@@ -7,6 +7,7 @@
     "/home/ubuntu/IsaacLab/source/isaaclab_tasks",
     "/home/ubuntu/IsaacLab/source/isaaclab_rl",
     "/home/ubuntu/IsaacLab/source/isaaclab_mimic",
-    "/home/ubuntu/IsaacLab/source/isaaclab_contrib"
+    "/home/ubuntu/IsaacLab/source/isaaclab_contrib",
+    "/home/ubuntu/IsaacLab/scripts/reinforcement_learning/rsl_rl"
   ]
 }

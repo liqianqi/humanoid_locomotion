@@ -2,11 +2,11 @@
 
 Standalone replacement for Isaac Lab's ``rsl_rl/play_wasd.py`` (only ``cli_args`` is reused from
 there). The key sensitivities default to the *training* command range of the current RSX config
-(forward 0-0.5 m/s, no strafe, no yaw), so the keyboard cannot send out-of-distribution commands
+(forward 0.15-0.35 m/s, no strafe, no yaw), so the keyboard cannot send out-of-distribution commands
 unless you raise the limits explicitly:
 
     /home/ubuntu/IsaacLab/isaaclab.sh -p scripts/play_wasd.py --task Isaac-Velocity-Flat-RSX-Play-v0 \\
-        --num_envs 1 --checkpoint <model.pt> --vx_max 0.5 --vy_max 0.0 --wz_max 0.0
+        --num_envs 1 --checkpoint <model.pt> --vx_max 0.35 --vy_max 0.0 --wz_max 0.0
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 from isaaclab.app import AppLauncher
 
@@ -42,7 +43,7 @@ parser.add_argument("--seed", type=int, default=None, help="Seed used for the en
 parser.add_argument("--real-time", action="store_true", default=True, help="Run in real-time if possible.")
 parser.add_argument("--allow_backward", action="store_true", default=False, help="Allow negative vx (S).")
 # Command magnitudes. Defaults match the training ranges in velocity_env_cfg.RsxRoughEnvCfg.
-parser.add_argument("--vx_max", type=float, default=0.5, help="Forward speed sent by W (m/s).")
+parser.add_argument("--vx_max", type=float, default=0.35, help="Forward speed sent by W (m/s).")
 parser.add_argument("--vy_max", type=float, default=0.0, help="Strafe speed sent by A/D (m/s). 0 = disabled.")
 parser.add_argument("--wz_max", type=float, default=0.0, help="Yaw rate sent by Q/E (rad/s). 0 = disabled.")
 cli_args.add_rsl_rl_args(parser)
@@ -66,12 +67,19 @@ from packaging import version  # noqa: E402
 from rsl_rl.runners import DistillationRunner, OnPolicyRunner  # noqa: E402
 
 from isaaclab.devices.keyboard import Se2Keyboard, Se2KeyboardCfg  # noqa: E402
-from isaaclab.envs import ManagerBasedRLEnvCfg  # noqa: E402
+from isaaclab.envs import ManagerBasedRLEnv, ManagerBasedRLEnvCfg  # noqa: E402
 from isaaclab.utils.assets import retrieve_file_path  # noqa: E402
+from isaaclab.utils.dict import class_to_dict  # noqa: E402
 
-from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, handle_deprecated_rsl_rl_cfg  # noqa: E402
+from isaaclab_rl.rsl_rl import (  # noqa: E402
+    RslRlBaseRunnerCfg,
+    RslRlOnPolicyRunnerCfg,
+    RslRlVecEnvWrapper,
+    handle_deprecated_rsl_rl_cfg,
+)
 
 import isaaclab_tasks  # noqa: F401, E402
+from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import CommandsCfg  # noqa: E402
 from isaaclab_tasks.utils import get_checkpoint_path  # noqa: E402
 from isaaclab_tasks.utils.hydra import hydra_task_config  # noqa: E402
 
@@ -105,7 +113,7 @@ class Se2WASDKeyboard(Se2Keyboard):
 
 def _prepare_keyboard_commands(env_cfg: ManagerBasedRLEnvCfg):
     """Stop random resampling / heading override so the keyboard owns the command."""
-    cmd_cfg = env_cfg.commands.base_velocity
+    cmd_cfg = cast(CommandsCfg, env_cfg.commands).base_velocity
     cmd_cfg.heading_command = False
     cmd_cfg.rel_heading_envs = 0.0
     cmd_cfg.rel_standing_envs = 0.0
@@ -134,27 +142,30 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else 1
     agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, installed_version)
-    env_cfg.seed = agent_cfg.seed
+    runner_cfg = cast(RslRlOnPolicyRunnerCfg, agent_cfg)
+    env_cfg.seed = runner_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
     _prepare_keyboard_commands(env_cfg)
 
-    log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", agent_cfg.experiment_name))
+    log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", runner_cfg.experiment_name))
     if args_cli.checkpoint:
         resume_path = retrieve_file_path(args_cli.checkpoint)
     else:
-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
+        resume_path = get_checkpoint_path(log_root_path, runner_cfg.load_run, runner_cfg.load_checkpoint)
     env_cfg.log_dir = os.path.dirname(resume_path)
 
-    env = RslRlVecEnvWrapper(gym.make(args_cli.task, cfg=env_cfg), clip_actions=agent_cfg.clip_actions)
+    task_env = cast(ManagerBasedRLEnv, gym.make(args_cli.task, cfg=env_cfg))
+    env = RslRlVecEnvWrapper(task_env, clip_actions=runner_cfg.clip_actions)
 
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
     print("[WARN] The env uses the *current* task config, not the env.yaml saved next to the checkpoint.")
-    if agent_cfg.class_name == "OnPolicyRunner":
-        runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
-    elif agent_cfg.class_name == "DistillationRunner":
-        runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+    runner_kwargs = class_to_dict(runner_cfg)
+    if runner_cfg.class_name == "OnPolicyRunner":
+        runner = OnPolicyRunner(env, runner_kwargs, log_dir=None, device=runner_cfg.device)
+    elif runner_cfg.class_name == "DistillationRunner":
+        runner = DistillationRunner(env, runner_kwargs, log_dir=None, device=runner_cfg.device)
     else:
-        raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
+        raise ValueError(f"Unsupported runner class: {runner_cfg.class_name}")
     runner.load(resume_path)
     policy = runner.get_inference_policy(device=env.unwrapped.device)
 
@@ -185,5 +196,5 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
 
 
 if __name__ == "__main__":
-    main()
+    cast(Any, main)()
     simulation_app.close()
