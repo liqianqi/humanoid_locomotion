@@ -30,9 +30,9 @@ def _algorithm() -> RslRlPpoAlgorithmCfg:
     cfg.lam = 0.95
     cfg.desired_kl = 0.01
     cfg.max_grad_norm = 1.0
-    # Symmetry OFF for now. The clone-swap fix made it consistent (mirror loss ~0), but with symmetry
-    # on the policy still froze/leaned; without it the robot actually walks. Getting a clean cross-step
-    # gait first via stepping rewards + heading-hold (for drift); revisit symmetry only if drift is bad.
+    # Symmetry OFF. Confirmed 3x that mirror symmetry (even with the clone-swap bug fixed and a
+    # clock-free reward set) collapses training here -> ~92% falls, no stepping. Instead the L/R
+    # asymmetry (limp) is fixed with a phase-clock gait reward that forces BOTH feet to alternate.
     cfg.symmetry_cfg = RslRlSymmetryCfg(
         use_data_augmentation=False,
         use_mirror_loss=False,

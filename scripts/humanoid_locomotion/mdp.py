@@ -18,6 +18,50 @@ def _cmd_moving(env: ManagerBasedRLEnv, command_name: str, cmd_threshold: float)
     return torch.norm(env.command_manager.get_command(command_name)[:, :2], dim=1) > cmd_threshold
 
 
+class arm_swing(ManagerTermBase):
+    """Reward a marching fore-aft arm swing, coupling each shoulder-pitch to the CONTRALATERAL foot's
+    fore-aft position (left arm forward when the right foot is forward, like an army 'forward march').
+
+    The earlier version coupled to hip-pitch, but the hip barely swings (the stride comes mostly from
+    knee/ankle) so a static arm already scored high. The foot's fore-aft position swings a lot
+    (~+/-0.15 m), so this actually forces the arm to move. Straight-arm only (elbow kept straight by a
+    separate penalty). Off when not moving. ``gain`` maps foot metres -> shoulder radians.
+    """
+
+    def __init__(self, env: ManagerBasedRLEnv, cfg: RewardTermCfg):
+        super().__init__(cfg, env)
+        robot: Articulation = env.scene["robot"]
+        jn = list(robot.data.joint_names)
+        bn = list(robot.data.body_names)
+        self.shL = jn.index("arm_left_shoulder_pitch_joint")
+        self.shR = jn.index("arm_right_shoulder_pitch_joint")
+        self.footL = bn.index("left_leg_ankle_pitch")
+        self.footR = bn.index("right_leg_ankle_pitch")
+
+    def _foot_fore_aft(self, robot: Articulation, bi: int) -> torch.Tensor:
+        rel = robot.data.body_pos_w[:, bi, :3] - robot.data.root_pos_w[:, :3]
+        q = yaw_quat(robot.data.root_quat_w)
+        return quat_apply_inverse(q, rel)[:, 0]  # fore(+)/aft(-) in the yaw frame
+
+    def __call__(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str = "base_velocity",
+        gain: float = 2.0,
+        std: float = 0.2,
+        cmd_threshold: float = 0.1,
+    ) -> torch.Tensor:
+        robot: Articulation = env.scene["robot"]
+        jp = robot.data.joint_pos
+        fL = self._foot_fore_aft(robot, self.footL)
+        fR = self._foot_fore_aft(robot, self.footR)
+        # left arm tracks right foot (contralateral); right arm tracks left foot
+        err_l = jp[:, self.shL] - gain * fR
+        err_r = jp[:, self.shR] - gain * fL
+        reward = torch.exp(-(err_l**2 + err_r**2) / (std**2))
+        return reward * _cmd_moving(env, command_name, cmd_threshold)
+
+
 def _contact_sensor(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> ContactSensor:
     sensor = env.scene.sensors[sensor_cfg.name]
     if not isinstance(sensor, ContactSensor):
@@ -153,7 +197,7 @@ class heading_hold(ManagerTermBase):
         else:
             self.ref_yaw[env_ids] = yaw[env_ids]
 
-    def __call__(
+    def __call__(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         env: ManagerBasedRLEnv,
         command_name: str = "base_velocity",
@@ -260,7 +304,7 @@ class double_stance(ManagerTermBase):
         else:
             self.both_down_time[env_ids] = 0.0
 
-    def __call__(  # type: ignore[override]
+    def __call__(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         env: ManagerBasedRLEnv,
         sensor_cfg: SceneEntityCfg,
@@ -311,7 +355,7 @@ class landing_overstep(ManagerTermBase):
             self.takeoff_other[env_ids] = 0.0
             self.was_air[env_ids] = False
 
-    def __call__(  # type: ignore[override]
+    def __call__(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         env: ManagerBasedRLEnv,
         sensor_cfg: SceneEntityCfg,

@@ -9,5 +9,8 @@
     "/home/ubuntu/IsaacLab/source/isaaclab_mimic",
     "/home/ubuntu/IsaacLab/source/isaaclab_contrib",
     "/home/ubuntu/IsaacLab/scripts/reinforcement_learning/rsl_rl"
-  ]
+  ],
+  "reportIncompatibleVariableOverride": "none",
+  "reportIncompatibleMethodOverride": "none",
+  "reportUnannotatedClassAttribute": "none"
 }

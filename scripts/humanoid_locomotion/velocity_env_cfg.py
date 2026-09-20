@@ -57,7 +57,7 @@ class MySceneCfg(InteractiveSceneCfg):
         ),
         debug_vis=False,
     )
-    robot: ArticulationCfg = RSX_CFG.replace(prim_path="{ENV_REGEX_NS}/robot")
+    robot: ArticulationCfg = RSX_CFG.replace(prim_path="{ENV_REGEX_NS}/robot")  # pyright: ignore[reportAttributeAccessIssue]
     contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/robot/.*", history_length=3, track_air_time=True)
     light = AssetBaseCfg(
         prim_path="/World/light",
@@ -92,6 +92,8 @@ class RSXObservations:
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=RSX_JOINTS, preserve_order=True)},
         )
         actions = ObsTerm(func=mdp.last_action)
+        # gait-phase clock (sin,cos) so the policy can time the alternating step schedule.
+        gait_phase = ObsTerm(func=cast(Any, rsx_mdp.gait_phase), params={"period": 0.7, "offset": 0.5})
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -149,9 +151,10 @@ class RSXRewards:
     termination_penalty = RewTerm(func=mdp.is_terminated, weight=-40.0)
 
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.25)
-    ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
-    # Strong upright penalty: kills the 52-degree backward lean seen in the probe.
-    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.0)
+    # Reduce body sway: penalize torso roll/pitch angular velocity harder (this is the rocking rate,
+    # from the base IMU gyro) plus a firmer upright (tilt) penalty.
+    ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.15)
+    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.5)
     # Keep the torso tall (~0.36 m) -> no crouch/sit-back.
     base_height = RewTerm(
         func=mdp.base_height_l2,
@@ -194,6 +197,36 @@ class RSXRewards:
             "target_height": 0.03,
         },
     )
+    # Step LENGTH (horizontal), independent of knee height: reward the swing foot LANDING ahead of the
+    # stance foot by ~one foot-length -> the trailing foot overtakes to become the new lead, a real
+    # stride, not just catching up. Gated (must be airborne, travel forward, start behind) so it can't
+    # be farmed by a planted split stance.
+    # Phase-clock gait: forces BOTH feet to alternate single-support on schedule (period 0.7 s). This
+    # is what fixes the limp (one leg striding, the other only following) -- both legs must swing on
+    # their scheduled beat. Paired with the gait_phase observation so the policy can time it.
+    gait_contact = RewTerm(
+        func=cast(Any, rsx_mdp.feet_gait_contact),
+        weight=1.5,
+        params={
+            "command_name": "base_velocity",
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["left_leg_ankle_pitch", "right_leg_ankle_pitch"], preserve_order=True),
+            "period": 0.7,
+            "offset": 0.5,
+            "stance_ratio": 0.6,
+        },
+    )
+    landing_overstep = RewTerm(
+        func=cast(Any, rsx_mdp.landing_overstep),
+        weight=8.0,
+        params={
+            "command_name": "base_velocity",
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["left_leg_ankle_pitch", "right_leg_ankle_pitch"], preserve_order=True),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_leg_ankle_pitch", "right_leg_ankle_pitch"], preserve_order=True),
+            "target_overstep": 0.16,  # bigger stride: swing foot lands ~a full foot-length past the stance foot
+            "min_air_time": 0.15,
+            "min_travel": 0.10,
+        },
+    )
     # Standing-still upright posture: when no command, gait rewards gate off and the torso would
     # otherwise settle into a leaned-back brace. Pull the legs back to the default (upright) stance.
     stand_still_posture = RewTerm(
@@ -228,11 +261,13 @@ class RSXRewards:
         weight=-0.8,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder_roll_joint", ".*_shoulder_yaw_joint"])},
     )
-    # Almost no penalty on shoulder/elbow PITCH -> the arms are free to swing fore-aft (front-back),
-    # which is the natural counter-swing that also helps cancel the per-step yaw.
+    # Arms held STILL and straight (no swing needed, per spec). Keeping shoulder-pitch + elbow near
+    # default makes the arms hang straight and quiet; with the roll/yaw lock above they never swing
+    # sideways into the body. (Active arm swing dropped: reward-shaped versions were gamed into static
+    # arms or regressed the gait to a shuffle -- not worth risking the walk.)
     joint_deviation_arms_pitch = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.02,
+        weight=-0.3,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder_pitch_joint", ".*_elbow_pitch_joint"])},
     )
 
@@ -255,7 +290,7 @@ class RSXTerminations:
 @configclass
 class RSXEvents:
     physics_material = EventTerm(
-        func=mdp.randomize_rigid_body_material,
+        func=cast(Any, mdp.randomize_rigid_body_material),
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
@@ -361,7 +396,7 @@ class RsxEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 20.0
         self.sim.dt = 0.005
         self.sim.render_interval = self.decimation
-        self.sim.disable_contact_processing = True
+        self.sim.disable_contact_processing = True  # pyright: ignore[reportAttributeAccessIssue]
         self.sim.physics_material = self.scene.terrain.physics_material
         self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
 
@@ -391,7 +426,7 @@ class RsxFlatEnvCfg_PLAY(RsxFlatEnvCfg):
         self.commands.base_velocity.ranges.lin_vel_x = (0.6, 0.6)
         self.commands.base_velocity.ranges.lin_vel_y = (0.0, 0.0)
         self.commands.base_velocity.ranges.ang_vel_z = (0.0, 0.0)
-        self.events.base_external_force_torque = None  # type: ignore[assignment]
+        self.events.base_external_force_torque = None  # pyright: ignore[reportAttributeAccessIssue]
 
 
 @configclass

@@ -17,22 +17,22 @@ class SymmetryCfg:
     """
 
     # A_sym, B_sym = B, A
-    observation_swap_terms: dict[str, list[tuple[int, int]]] = MISSING
+    observation_swap_terms: dict[str, list[tuple[int, int]]] = MISSING  # pyright: ignore[reportAssignmentType]
 
     # A_sym, B_sym = -B, -A
-    observation_swap_negate_terms: dict[str, list[tuple[int, int]]] = MISSING
+    observation_swap_negate_terms: dict[str, list[tuple[int, int]]] = MISSING  # pyright: ignore[reportAssignmentType]
 
     # A_sym = -A
-    observation_negate_terms: dict[str, list[int]] = MISSING
+    observation_negate_terms: dict[str, list[int]] = MISSING  # pyright: ignore[reportAssignmentType]
 
     # A_sym, B_sym = B, A
-    action_swap_terms: dict[str, list[tuple[int, int]]] = MISSING
+    action_swap_terms: dict[str, list[tuple[int, int]]] = MISSING  # pyright: ignore[reportAssignmentType]
 
     # A_sym, B_sym = -B, -A
-    action_swap_negate_terms: dict[str, list[tuple[int, int]]] = MISSING
+    action_swap_negate_terms: dict[str, list[tuple[int, int]]] = MISSING  # pyright: ignore[reportAssignmentType]
 
     # A_sym = -A
-    action_negate_terms: dict[str, list[int]] = MISSING
+    action_negate_terms: dict[str, list[int]] = MISSING  # pyright: ignore[reportAssignmentType]
 
 
 def __get_observation_term_index(observation_manager: ObservationManager, group_name: str, term_name: str) -> int | None:
@@ -115,7 +115,7 @@ def symmetry_data_augmentation_function(
     # Augment the observation
     if obs is not None:
         symmetry_obs = obs.clone()
-        manager = env.unwrapped.observation_manager
+        manager = env.unwrapped.observation_manager  # pyright: ignore[reportAttributeAccessIssue]
 
         # Swap pairs
         for term_name in symmetry_cfg.observation_swap_terms:
@@ -166,7 +166,7 @@ def symmetry_data_augmentation_function(
     # Augment the actions
     if actions is not None:
         symmetry_actions = actions.clone()
-        manager = env.unwrapped.action_manager
+        manager = env.unwrapped.action_manager  # pyright: ignore[reportAttributeAccessIssue]
 
         # Swap pairs
         for term_name in symmetry_cfg.action_swap_terms:
