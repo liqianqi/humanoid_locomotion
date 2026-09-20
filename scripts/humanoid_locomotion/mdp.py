@@ -100,6 +100,132 @@ def feet_gait_contact(
     return reward * _cmd_moving(env, command_name, cmd_threshold)
 
 
+def forward_progress(
+    env: ManagerBasedRLEnv,
+    command_name: str = "base_velocity",
+    cmd_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Linear reward for speed ALONG the commanded direction, capped at the commanded speed.
+
+    The exp velocity tracker is flat-zero far from target, so once the policy drifts into walking
+    backward there is no gradient to climb back (the 2026-09-18 probe found 79% of samples moving
+    backward at vx=-0.185 while commanded +0.6). This term keeps a constant +gradient for every
+    velocity below command -- including negative -- so forward is always uphill. It is capped at the
+    commanded speed (cannot be farmed by overspeeding), pays 0 for standing and a negative for moving
+    backward. Off for near-zero commands.
+    """
+    asset: Articulation = env.scene["robot"]
+    cmd = env.command_manager.get_command(command_name)[:, :2]
+    cmd_norm = torch.norm(cmd, dim=1)
+    cmd_dir = cmd / cmd_norm.clamp(min=1.0e-6).unsqueeze(1)
+    vel_xy = asset.data.root_lin_vel_b[:, :2]
+    v_along = torch.sum(vel_xy * cmd_dir, dim=1)
+    reward = torch.minimum(v_along, cmd_norm)
+    return reward * _cmd_moving(env, command_name, cmd_threshold)
+
+
+def _base_yaw(asset: Articulation) -> torch.Tensor:
+    """World yaw of the base (rad) from its quaternion (w, x, y, z)."""
+    q = asset.data.root_quat_w
+    w, x, y, z = q[:, 0], q[:, 1], q[:, 2], q[:, 3]
+    return torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+class heading_hold(ManagerTermBase):
+    """Hold the heading captured at reset, whenever no turn is commanded.
+
+    The systematic heading drift is a *learned* left/right gait asymmetry (its sign varies run to
+    run), which reward-strength tweaks cannot fix. This term instead penalizes NET heading deviation
+    from a per-env reference directly -- the VIO/nav metric itself -- so the policy must actively
+    correct whatever asymmetry it has. Non-saturating (quadratic) so far-off headings still pull back.
+    While a yaw rate IS commanded the reference follows the current heading and the penalty is off, so
+    commanded turns are not fought.
+    """
+
+    def __init__(self, env: ManagerBasedRLEnv, cfg: RewardTermCfg):
+        super().__init__(cfg, env)
+        self.ref_yaw = _base_yaw(env.scene["robot"]).clone()
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        yaw = _base_yaw(self._env.scene["robot"])
+        if env_ids is None:
+            self.ref_yaw = yaw.clone()
+        else:
+            self.ref_yaw[env_ids] = yaw[env_ids]
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str = "base_velocity",
+        cmd_yaw_threshold: float = 0.1,
+    ) -> torch.Tensor:
+        cur = _base_yaw(env.scene["robot"])
+        cmd_yaw = env.command_manager.get_command(command_name)[:, 2]
+        turning = cmd_yaw.abs() >= cmd_yaw_threshold
+        # while turning, let the reference follow the heading so commanded turns are free
+        self.ref_yaw = torch.where(turning, cur, self.ref_yaw)
+        err = torch.atan2(torch.sin(cur - self.ref_yaw), torch.cos(cur - self.ref_yaw))
+        return torch.square(err) * (~turning).float()
+
+
+def lateral_velocity_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str = "base_velocity",
+    cmd_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Quadratic penalty on velocity PERPENDICULAR to the commanded direction (cross-track).
+
+    The exp tracker penalizes 2D velocity error but saturates; this keeps a sharp gradient on the
+    sideways component that makes the velocity vector wobble ~16 deg off-command and the path weave.
+    Straighter path -> steadier heading for VIO/nav. Off for near-zero commands.
+    """
+    asset: Articulation = env.scene["robot"]
+    cmd = env.command_manager.get_command(command_name)[:, :2]
+    cmd_norm = torch.norm(cmd, dim=1)
+    cmd_dir = cmd / cmd_norm.clamp(min=1.0e-6).unsqueeze(1)
+    perp = torch.stack([-cmd_dir[:, 1], cmd_dir[:, 0]], dim=1)  # 90deg left of command
+    vel_xy = asset.data.root_lin_vel_b[:, :2]
+    v_perp = torch.sum(vel_xy * perp, dim=1)
+    return torch.square(v_perp) * _cmd_moving(env, command_name, cmd_threshold)
+
+
+def ang_vel_z_error_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str = "base_velocity",
+) -> torch.Tensor:
+    """Quadratic penalty on yaw-rate tracking error (body frame).
+
+    The exp tracking reward saturates to a flat zero far from target (at the measured ~1.3 rad/s
+    wobble its gradient vanishes), so the policy never learns to damp the violent per-step yaw twist.
+    An L2 penalty keeps a strong gradient at every error magnitude. It penalizes deviation from the
+    *commanded* yaw rate, so commanded turns are not punished.
+    """
+    asset: Articulation = env.scene["robot"]
+    cmd_z = env.command_manager.get_command(command_name)[:, 2]
+    yaw_rate = asset.data.root_ang_vel_b[:, 2]
+    return torch.square(yaw_rate - cmd_z)
+
+
+def stand_still_joint_deviation_l1(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    command_name: str = "base_velocity",
+    cmd_threshold: float = 0.1,
+) -> torch.Tensor:
+    """L1 joint deviation from the default pose, active ONLY when the command is ~zero (standing).
+
+    All gait-shaping rewards are gated off at zero command, so nothing otherwise constrains the feet
+    when standing and they freeze in whatever (e.g. fore-aft crossed) pose the policy last held. This
+    pulls the whole stance back to the symmetric default while standing. It is the mirror gate of
+    ``_cmd_moving`` and must not overlap the walking regime, or it fights the gait.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    angle = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    deviation = torch.sum(torch.abs(angle), dim=1)
+    standing = ~_cmd_moving(env, command_name, cmd_threshold)
+    return deviation * standing.float()
+
+
 def swing_foot_clearance(
     env: ManagerBasedRLEnv,
     sensor_cfg: SceneEntityCfg,

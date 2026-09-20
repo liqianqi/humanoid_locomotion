@@ -2,11 +2,13 @@
 
 Standalone replacement for Isaac Lab's ``rsl_rl/play_wasd.py`` (only ``cli_args`` is reused from
 there). The key sensitivities default to the *training* command range of the current RSX config
-(forward 0.15-0.35 m/s, no strafe, no yaw), so the keyboard cannot send out-of-distribution commands
-unless you raise the limits explicitly:
+(forward 0.4-0.9 m/s, yaw +/-0.4 rad/s; strafe disabled -- unicycle model). Override to stay inside
+distribution or to probe out-of-distribution:
 
     /home/ubuntu/IsaacLab/isaaclab.sh -p scripts/play_wasd.py --task Isaac-Velocity-Flat-RSX-Play-v0 \\
-        --num_envs 1 --checkpoint <model.pt> --vx_max 0.35 --vy_max 0.0 --wz_max 0.0
+        --num_envs 1 --checkpoint <model.pt> --vx_max 0.6 --vy_max 0.0 --wz_max 0.4
+
+W/S forward-back, A/D strafe, Q/E turn. Set any of --vx_max/--vy_max/--wz_max to 0 to disable that axis.
 """
 
 from __future__ import annotations
@@ -42,10 +44,11 @@ parser.add_argument(
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment.")
 parser.add_argument("--real-time", action="store_true", default=True, help="Run in real-time if possible.")
 parser.add_argument("--allow_backward", action="store_true", default=False, help="Allow negative vx (S).")
-# Command magnitudes. Defaults match the training ranges in velocity_env_cfg.RsxRoughEnvCfg.
-parser.add_argument("--vx_max", type=float, default=0.35, help="Forward speed sent by W (m/s).")
-parser.add_argument("--vy_max", type=float, default=0.0, help="Strafe speed sent by A/D (m/s). 0 = disabled.")
-parser.add_argument("--wz_max", type=float, default=0.0, help="Yaw rate sent by Q/E (rad/s). 0 = disabled.")
+# Command magnitudes. Defaults match the training ranges in velocity_env_cfg.RsxRoughEnvCfg
+# (lin_vel_x 0.4-0.9, lin_vel_y +/-0.15, ang_vel_z +/-0.4).
+parser.add_argument("--vx_max", type=float, default=0.6, help="Forward speed sent by W (m/s).")
+parser.add_argument("--vy_max", type=float, default=0.0, help="Strafe speed sent by A/D (m/s). 0 = disabled (unicycle model: forward+turn only).")
+parser.add_argument("--wz_max", type=float, default=0.4, help="Yaw rate sent by Q/E (rad/s). 0 = disabled.")
 cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()

@@ -1,43 +1,58 @@
-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2022-2026, The Isaac Lab Project Developers.
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Configuration for the RSX biped.
+"""Configuration for the RSX biped -- ARMED whole-body model (UC Berkeley RS-X recipe).
 
-Motor map (left and right legs share the same models), from RobStride
-RS series specs dated 2026-07-13:
+Faithful port of the Berkeley robstride.py: same 18-DOF layout, init pose, and actuator gains
+(these are the vendor/Berkeley-tuned values and are trusted). The ONE necessary difference is that
+we load the self-contained URDF (their 210 MB USD is an unfetched Git-LFS stub) and convert it here.
 
-* joint 1 (hip pitch): RS06
-* joints 2-3 (hip roll, thigh yaw): RS02
-* joint 4 (knee): RS06
-* joint 5 (ankle): RS00
+CRITICAL: collider_type="convex_decomposition". The converter default "convex_hull" turns each
+curved foot mesh into a single convex hull with a rounded sole -> the robot rocks and cannot stand
+flat, which was the real reason training collapsed (same boat-sole trap as the legs-only model on
+2026-09-16). Convex decomposition keeps the flat sole.
 """
 
 import math
 from pathlib import Path
 
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import DCMotorCfg
+from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 
-_RSX_URDF_PATH = str(Path(__file__).resolve().parents[2] / "assets" / "rsx" / "urdf" / "asm1.SLDASM.urdf")
+_RSX_URDF_PATH = str(Path(__file__).resolve().parents[2] / "assets" / "rsx_arm" / "rsx.urdf")
 
-# rpm -> rad/s (no-load speed from RobStride 2026-07-13 spec)
-_RS00_VEL = 315.0 * 2.0 * math.pi / 60.0
-_RS02_VEL = 410.0 * 2.0 * math.pi / 60.0
-_RS06_VEL = 480.0 * 2.0 * math.pi / 60.0
 
-# Reflected rotor inertia (J_rotor * gear_ratio^2) added to each joint, kg m^2. Not measured for RS series;
-# 0.01 is the value Isaac Lab uses for the Unitree G1 legs/ankles and is the right order of magnitude for
-# quasi-direct-drive actuators. Replace with datasheet values when available.
-_ARMATURE = 0.01
+def _rpm_to_rad_s(rpm: float) -> float:
+    return rpm * (2.0 * math.pi / 60.0)
+
+
+# RobStride datasheet (armature kg m^2, rated_torque N*m, rated_load_speed rpm).
+_RS00_MINI = {"armature": 0.001, "torque": 5.0, "speed": 260.0}
+_RS00 = {"armature": 0.001, "torque": 5.0, "speed": 260.0}
+_RS02 = {"armature": 4.2e-3, "torque": 6.0, "speed": 360.0}
+_RS03_MINI = {"armature": 0.015, "torque": 20.0, "speed": 180.0}
+
+
+def _act(names, spec, stiffness, damping):
+    return ImplicitActuatorCfg(
+        joint_names_expr=names,
+        armature=spec["armature"],
+        effort_limit_sim=spec["torque"],
+        velocity_limit_sim=_rpm_to_rad_s(spec["speed"]),
+        stiffness=stiffness,
+        damping=damping,
+    )
+
 
 RSX_CFG = ArticulationCfg(
     spawn=sim_utils.UrdfFileCfg(
         asset_path=_RSX_URDF_PATH,
         fix_base=False,
         activate_contact_sensors=True,
+        collider_type="convex_decomposition",  # keep the flat foot sole (see module docstring)
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             retain_accelerations=False,
@@ -49,7 +64,7 @@ RSX_CFG = ArticulationCfg(
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
             enabled_self_collisions=False,
-            solver_position_iteration_count=4,
+            solver_position_iteration_count=8,
             solver_velocity_iteration_count=4,
         ),
         joint_drive=sim_utils.UrdfConverterCfg.JointDriveCfg(
@@ -57,56 +72,42 @@ RSX_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        # Symmetric pre-squat (sign convention: hip +=flexion, knee +=flexion, ankle +=plantarflexion; requires the
-        # knee axes to be consistent in the URDF, leg_r4_joint axis flipped on 2026-09-16). hip - knee - ankle = 0
-        # keeps the torso level. Hip 0.13 / knee 0.40 / ankle -0.27 places the whole-body CoM ~1 cm ahead of the
-        # ankle, inside the flat sole box; zero-action probe (2026-09-16): stands indefinitely, steady pitch ~0 rad
-        # (0.10/-0.30 gave +0.065 rad forward lean, 0.15/-0.25 gave -0.05 rad backward lean).
-        # Lowest sole point is ~0.3674 m below base_link in this pose -> 0.371 m leaves ~4 mm clearance.
-        pos=(0.0, 0.0, 0.371),
+        pos=(0.0, 0.0, 0.4),
         joint_pos={
-            "leg_[lr]1_joint": 0.13,
-            "leg_[lr]4_joint": 0.40,
-            "leg_[lr]5_joint": -0.27,
+            "arm_left_shoulder_pitch_joint": 0.0,
+            "arm_left_shoulder_roll_joint": 0.0,
+            "arm_left_shoulder_yaw_joint": 0.0,
+            "arm_left_elbow_pitch_joint": 0.0,
+            "arm_right_shoulder_pitch_joint": 0.0,
+            "arm_right_shoulder_roll_joint": 0.0,
+            "arm_right_shoulder_yaw_joint": 0.0,
+            "arm_right_elbow_pitch_joint": 0.0,
+            "leg_left_hip_pitch_joint": -0.2,
+            "leg_left_hip_roll_joint": 0.0,
+            "leg_left_hip_yaw_joint": 0.0,
+            "leg_left_knee_pitch_joint": 0.4,
+            "leg_left_ankle_pitch_joint": -0.2,
+            "leg_right_hip_pitch_joint": -0.2,
+            "leg_right_hip_roll_joint": 0.0,
+            "leg_right_hip_yaw_joint": 0.0,
+            "leg_right_knee_pitch_joint": 0.4,
+            "leg_right_ankle_pitch_joint": -0.2,
         },
         joint_vel={".*": 0.0},
     ),
     soft_joint_pos_limit_factor=0.9,
-    # NOTE: DCMotorCfg is an *explicit* PD (torque applied every physics step, dt=5 ms). The RSX links are
-    # very light (0.12-0.2 kg, I ~ 1e-4 kg m^2), so without reflected rotor inertia the discrete PD loop
-    # is unstable (Kd*dt/I >> 2): joints reached 12-19 rad/s within 2 steps of touchdown. `armature`
-    # adds the gearbox-reflected rotor inertia (same as G1's 0.01) and makes the loop stable.
+    # Berkeley-tuned gains (trusted vendor values).
     actuators={
-        "rs06": DCMotorCfg(
-            joint_names_expr=["leg_[lr][14]_joint"],
-            effort_limit=11.0,
-            saturation_effort=36.0,
-            velocity_limit=_RS06_VEL,
-            stiffness=60.0,
-            damping=3.0,
-            armature=_ARMATURE,
-        ),
-        "rs02": DCMotorCfg(
-            joint_names_expr=["leg_[lr][23]_joint"],
-            effort_limit=7.0,
-            saturation_effort=17.0,
-            velocity_limit=_RS02_VEL,
-            stiffness=50.0,
-            damping=2.5,
-            armature=_ARMATURE,
-        ),
-        # Ankle stiffness must exceed the gravitational "negative stiffness" of the body pivoting about the
-        # ankles, m*g*h_com/2 = 12.7*9.81*0.367/2 ~ 23 N m/rad, otherwise the zero-action stance topples.
-        # 20 (G1 value) is below that for this robot; 40 gives a positive margin.
-        "rs00": DCMotorCfg(
-            joint_names_expr=["leg_[lr]5_joint"],
-            effort_limit=5.0,
-            saturation_effort=14.0,
-            velocity_limit=_RS00_VEL,
-            stiffness=40.0,
-            damping=2.0,
-            armature=_ARMATURE,
-        ),
+        "shoulder_pitch": _act([".*_shoulder_pitch_joint"], _RS02, 40, 2),
+        "shoulder_roll": _act([".*_shoulder_roll_joint"], _RS00, 40, 2),
+        "shoulder_yaw": _act([".*_shoulder_yaw_joint"], _RS00_MINI, 40, 2),
+        "elbow": _act([".*_elbow_pitch_joint"], _RS00, 40, 2),
+        "hip_pitch": _act([".*_hip_pitch_joint"], _RS03_MINI, 60, 2),
+        "hip_roll_yaw": _act([".*_hip_roll_joint", ".*_hip_yaw_joint"], _RS02, 40, 2),
+        "knee": _act([".*_knee_pitch_joint"], _RS03_MINI, 40, 2),
+        "ankle": _act([".*_ankle_pitch_joint"], _RS00, 10, 2),
     },
 )
-"""RSX biped with RobStride RS06 / RS02 / RS00 DC-motor limits."""
+"""RSX armed whole-body robot (RobStride actuators, Berkeley gains)."""
+
+RSX_JOINTS = list(RSX_CFG.init_state.joint_pos.keys())

@@ -1,26 +1,22 @@
-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2022-2026, The Isaac Lab Project Developers.
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+"""RSL-RL PPO config for the armed RSX (Berkeley RS-X recipe, with mirror symmetry)."""
+
 from isaaclab.utils import configclass
+from isaaclab_rl.rsl_rl import (
+    RslRlOnPolicyRunnerCfg,
+    RslRlPpoActorCriticCfg,
+    RslRlPpoAlgorithmCfg,
+    RslRlSymmetryCfg,
+)
 
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
-
-
-def _rsx_policy(hidden_dims: list[int]) -> RslRlPpoActorCriticCfg:
-    # @configclass does not expose a typed __init__; set fields after construction.
-    cfg = RslRlPpoActorCriticCfg()
-    cfg.init_noise_std = 1.0
-    cfg.actor_obs_normalization = False
-    cfg.critic_obs_normalization = False
-    cfg.actor_hidden_dims = hidden_dims
-    cfg.critic_hidden_dims = hidden_dims
-    cfg.activation = "elu"
-    return cfg
+from humanoid_locomotion.symmetry import symmetry_data_augmentation_function
 
 
-def _rsx_algorithm() -> RslRlPpoAlgorithmCfg:
+def _algorithm() -> RslRlPpoAlgorithmCfg:
     cfg = RslRlPpoAlgorithmCfg()
     cfg.value_loss_coef = 1.0
     cfg.use_clipped_value_loss = True
@@ -34,25 +30,38 @@ def _rsx_algorithm() -> RslRlPpoAlgorithmCfg:
     cfg.lam = 0.95
     cfg.desired_kl = 0.01
     cfg.max_grad_norm = 1.0
+    # Symmetry OFF for now. The clone-swap fix made it consistent (mirror loss ~0), but with symmetry
+    # on the policy still froze/leaned; without it the robot actually walks. Getting a clean cross-step
+    # gait first via stepping rewards + heading-hold (for drift); revisit symmetry only if drift is bad.
+    cfg.symmetry_cfg = RslRlSymmetryCfg(
+        use_data_augmentation=False,
+        use_mirror_loss=False,
+        data_augmentation_func=symmetry_data_augmentation_function,
+        mirror_loss_coeff=0.1,
+    )
+    return cfg
+
+
+def _policy() -> RslRlPpoActorCriticCfg:
+    cfg = RslRlPpoActorCriticCfg()
+    cfg.init_noise_std = 1.0
+    cfg.actor_hidden_dims = [256, 128, 128]
+    cfg.critic_hidden_dims = [256, 128, 128]
+    cfg.activation = "elu"
     return cfg
 
 
 @configclass
-class RsxRoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+class RsxFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 3000
-    save_interval = 50
-    experiment_name = "rsx_rough"
-    policy = _rsx_policy([512, 256, 128])
-    algorithm = _rsx_algorithm()
+    max_iterations = 3000  # converges (episode length 1000) by ~1100; 3000 is plenty and faster
+    save_interval = 200
+    experiment_name = "rsx_flat"
+    empirical_normalization = False  # Berkeley sets this explicitly; keep obs un-normalized to match
+    policy = _policy()
+    algorithm = _algorithm()
 
 
 @configclass
-class RsxFlatPPORunnerCfg(RsxRoughPPORunnerCfg):
-    def __post_init__(self):
-        super().__post_init__()  # type: ignore[misc]
-
-        self.max_iterations = 1500
-        self.experiment_name = "rsx_flat"
-        self.policy.actor_hidden_dims = [256, 128, 128]
-        self.policy.critic_hidden_dims = [256, 128, 128]
+class RsxRoughPPORunnerCfg(RsxFlatPPORunnerCfg):
+    experiment_name = "rsx_rough"
