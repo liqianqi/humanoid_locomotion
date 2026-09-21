@@ -14,8 +14,58 @@ from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_apply_inverse, yaw_quat
 
 
-def _cmd_moving(env: ManagerBasedRLEnv, command_name: str, cmd_threshold: float) -> torch.Tensor:
+def _cmd_moving(
+    env: ManagerBasedRLEnv, command_name: str, cmd_threshold: float, ang_threshold: float = 0.3
+) -> torch.Tensor:
+    """True when the robot is commanded to MOVE -- either a linear command (norm of vx,vy) OR a
+    significant yaw command. Including yaw is essential for TURNING IN PLACE: otherwise a pure
+    (vx=0, wz!=0) command counts as "standing", which gates every gait/arm reward OFF and turns the
+    stand-still posture penalty ON -> the legs are frozen and the robot cannot pivot. With yaw in the
+    gate, an in-place turn is treated as locomotion: gait_contact/air/arm rewards fire and the
+    stand-still lock releases, so the policy is free (and rewarded) to take pivot steps.
+    """
+    cmd = env.command_manager.get_command(command_name)
+    lin = torch.norm(cmd[:, :2], dim=1) > cmd_threshold
+    ang = torch.abs(cmd[:, 2]) > ang_threshold
+    return lin | ang
+
+
+def _cmd_moving_linear(env: ManagerBasedRLEnv, command_name: str, cmd_threshold: float) -> torch.Tensor:
+    """LINEAR-only movement gate, for terms whose meaning is tied to travelling in a direction
+    (e.g. overstep). Those must stay off during a pure in-place turn rather than degenerate."""
     return torch.norm(env.command_manager.get_command(command_name)[:, :2], dim=1) > cmd_threshold
+
+
+class arm_swing_phase(ManagerTermBase):
+    """Marching (army 'forward-march') arm swing driven by the gait-phase CLOCK, so it cannot be gamed
+    into static arms (the clock always advances -> the target always moves). Contralateral coupling:
+    left arm tracks the RIGHT leg's phase and vice-versa, so left-leg-forward pairs with right-arm-
+    forward. ``gain`` (rad) sets the swing amplitude. Off for near-zero commands.
+    """
+
+    def __init__(self, env: ManagerBasedRLEnv, cfg: RewardTermCfg):
+        super().__init__(cfg, env)
+        jn = list(env.scene["robot"].data.joint_names)
+        self.shL = jn.index("arm_left_shoulder_pitch_joint")
+        self.shR = jn.index("arm_right_shoulder_pitch_joint")
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str = "base_velocity",
+        period: float = 0.7,
+        offset: float = 0.5,
+        gain: float = 0.3,
+        std: float = 0.25,
+        cmd_threshold: float = 0.1,
+    ) -> torch.Tensor:
+        left, right = _leg_phase(env, period, offset)
+        two_pi = 2.0 * math.pi
+        tgt_l = gain * torch.sin(two_pi * right)  # left arm tracks the RIGHT leg (contralateral)
+        tgt_r = gain * torch.sin(two_pi * left)   # right arm tracks the LEFT leg
+        jp = env.scene["robot"].data.joint_pos
+        err = (jp[:, self.shL] - tgt_l) ** 2 + (jp[:, self.shR] - tgt_r) ** 2
+        return torch.exp(-err / (std**2)) * _cmd_moving(env, command_name, cmd_threshold)
 
 
 class arm_swing(ManagerTermBase):
@@ -88,7 +138,14 @@ def _feet_progress_along_cmd(
     q = yaw_quat(asset.data.root_quat_w).unsqueeze(1).expand(-1, n_feet, -1).reshape(-1, 4)
     feet_yaw = quat_apply_inverse(q, rel.reshape(-1, 3)).reshape(n_env, n_feet, 3)
     cmd_xy = env.command_manager.get_command(command_name)[:, :2]
-    cmd_n = cmd_xy / torch.clamp(torch.norm(cmd_xy, dim=1, keepdim=True), min=1.0e-6)
+    # With a pure yaw command (turn in place) the linear command is [0, 0] and normalizing it yields
+    # [0, 0], collapsing every projection to 0 -- which silently zeroed the overstep measure AND
+    # poisoned the stored take-off positions. Fall back to the body +x axis so "fore-aft" stays
+    # meaningful whenever there is no commanded direction.
+    norm = torch.norm(cmd_xy, dim=1, keepdim=True)
+    fallback = torch.zeros_like(cmd_xy)
+    fallback[:, 0] = 1.0
+    cmd_n = torch.where(norm > 1.0e-3, cmd_xy / torch.clamp(norm, min=1.0e-6), fallback)
     return torch.sum(feet_yaw[..., :2] * cmd_n.unsqueeze(1), dim=-1)
 
 
@@ -113,6 +170,31 @@ def gait_phase(
     left, _ = _leg_phase(env, period, offset)
     two_pi = 2.0 * math.pi
     return torch.stack([torch.sin(two_pi * left), torch.cos(two_pi * left)], dim=1)
+
+
+def feet_air_time_biped(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    command_name: str = "base_velocity",
+    threshold: float = 0.25,
+    cmd_threshold: float = 0.1,
+    ang_threshold: float = 0.3,
+) -> torch.Tensor:
+    """Isaac's ``feet_air_time_positive_biped`` with a YAW-AWARE "is moving" gate.
+
+    The stock term multiplies by ``norm(command[:, :2]) > 0.1`` -- linear only -- so during a turn in
+    place (vx=0) the single largest stepping incentive in the reward set switches off exactly when
+    pivot steps are wanted. Identical math, gate widened to include a significant yaw command.
+    """
+    contact = _contact_sensor(env, sensor_cfg)
+    air_time = _need_time(contact.data.current_air_time, "current_air_time")[:, sensor_cfg.body_ids]
+    contact_time = _need_time(contact.data.current_contact_time, "current_contact_time")[:, sensor_cfg.body_ids]
+    in_contact = contact_time > 0.0
+    in_mode_time = torch.where(in_contact, contact_time, air_time)
+    single_stance = torch.sum(in_contact.int(), dim=1) == 1
+    reward = torch.min(torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0), dim=1)[0]
+    reward = torch.clamp(reward, max=threshold)
+    return reward * _cmd_moving(env, command_name, cmd_threshold, ang_threshold)
 
 
 def feet_gait_contact(
@@ -326,6 +408,52 @@ class double_stance(ManagerTermBase):
         return (self.both_down_time > hold_time).float() * _cmd_moving(env, command_name, cmd_threshold)
 
 
+class feet_foreaft_balance(ManagerTermBase):
+    """Penalize a persistent fore-aft OFFSET between the two feet during STRAIGHT walking.
+
+    The phase clock enforces temporal alternation but NOT spatial symmetry: the policy can settle
+    into a staggered stance (one foot permanently ~10 cm ahead) that reads as a limp even though both
+    feet travel equally. That staggered stance is natural for TURNING, so this term is gated to
+    straight walking only (a linear command is present AND the yaw command is small) and left off
+    during turns, so it fixes straight-walk symmetry without fighting the pivot stance of a turn.
+
+    Tracks an EMA (~one stride) of d = x_left - x_right in the yaw frame; a symmetric gait averages
+    d -> 0, a staggered one keeps |EMA(d)| large. Returns |EMA(d)| (use a NEGATIVE weight).
+    """
+
+    def __init__(self, env: ManagerBasedRLEnv, cfg: RewardTermCfg):
+        super().__init__(cfg, env)
+        bn = list(env.scene["robot"].data.body_names)
+        self.lf = bn.index("left_leg_ankle_pitch")
+        self.rf = bn.index("right_leg_ankle_pitch")
+        self.ema = torch.zeros(env.num_envs, device=env.device)
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        if env_ids is None:
+            self.ema.zero_()
+        else:
+            self.ema[env_ids] = 0.0
+
+    def __call__(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str = "base_velocity",
+        alpha: float = 0.03,
+        cmd_threshold: float = 0.1,
+        ang_threshold: float = 0.3,
+    ) -> torch.Tensor:
+        robot: Articulation = env.scene["robot"]
+        q = yaw_quat(robot.data.root_quat_w)
+        rel_l = robot.data.body_pos_w[:, self.lf, :3] - robot.data.root_pos_w[:, :3]
+        rel_r = robot.data.body_pos_w[:, self.rf, :3] - robot.data.root_pos_w[:, :3]
+        lx = quat_apply_inverse(q, rel_l)[:, 0]
+        rx = quat_apply_inverse(q, rel_r)[:, 0]
+        self.ema = (1.0 - alpha) * self.ema + alpha * (lx - rx)
+        cmd = env.command_manager.get_command(command_name)
+        straight = (torch.norm(cmd[:, :2], dim=1) > cmd_threshold) & (torch.abs(cmd[:, 2]) < ang_threshold)
+        return torch.abs(self.ema) * straight.float()
+
+
 class landing_overstep(ManagerTermBase):
     """Pay only when the trailing foot swings forward and lands past the stance foot.
 
@@ -400,4 +528,6 @@ class landing_overstep(ManagerTermBase):
         reward = torch.sum(score * valid.float(), dim=1)
 
         self.was_air = in_air
-        return reward * _cmd_moving(env, command_name, cmd_threshold)
+        # LINEAR-only gate: "overstep" means swinging past the stance foot ALONG THE DIRECTION OF
+        # TRAVEL, which is undefined for a pure in-place turn. Keep it off there.
+        return reward * _cmd_moving_linear(env, command_name, cmd_threshold)

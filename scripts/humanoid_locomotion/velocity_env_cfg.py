@@ -34,6 +34,7 @@ from typing import Any, cast
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 
 from . import mdp as rsx_mdp
+from .commands import InPlaceTurnVelocityCommandCfg
 from .rsx import RSX_CFG, RSX_JOINTS
 from .symmetry import SymmetryCfg
 
@@ -111,19 +112,32 @@ class RSXObservations:
 class RSXCommands:
     """Heading-tracked velocity command (holds a commanded heading -> low net drift)."""
 
-    base_velocity = mdp.UniformVelocityCommandCfg(
+    base_velocity = InPlaceTurnVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.02,
-        rel_heading_envs=1.0,
+        # ~15% of envs are commanded to TURN IN PLACE (vx=0, |yaw| 0.35-0.5) -> dedicated coverage so
+        # the policy learns to pivot at zero forward speed (a plain uniform command left this at ~2%).
+        rel_inplace_turn_envs=0.15,
+        inplace_turn_speed=(0.35, 0.5),
+        # Of the remaining envs, MOST use heading control: once aligned to the heading target their yaw
+        # command decays to ~0, i.e. they walk STRAIGHT (and the alignment phase itself trains
+        # walk-and-turn). The small non-heading slice holds a constant yaw for the full 10 s resample
+        # window, i.e. walks in a circle. At rel_heading_envs=0.5 that circling slice was ~41% of all
+        # envs and straight walking was starved -> measured vx tracking collapsed to 0.397/0.6 and the
+        # robot curved ~27 deg / 6 s when commanded straight. Turning coverage now comes from the
+        # dedicated in-place mode above, so heading control can dominate again.
+        rel_heading_envs=0.85,
         heading_command=True,
         heading_control_stiffness=0.5,
         debug_vis=True,
         # Forward + turn only (no backward, no strafe): a focused, learnable task that yields a clean
-        # cross-step gait; backward command was producing the sit-back/lean. heading_command holds
-        # the commanded heading -> low net yaw drift.
+        # cross-step gait; backward command was producing the sit-back/lean.
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.3, 0.9),
+            # Floor back up to 0.25: it was dropped to 0.0 only to try to teach in-place turning, which
+            # the dedicated in-place mode now handles. A 0.0 floor just piled on near-zero forward
+            # commands and blunted forward-speed tracking.
+            lin_vel_x=(0.25, 0.9),
             lin_vel_y=(0.0, 0.0),
             ang_vel_z=(-0.5, 0.5),
             heading=(-math.pi, math.pi),
@@ -153,7 +167,7 @@ class RSXRewards:
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.25)
     # Reduce body sway: penalize torso roll/pitch angular velocity harder (this is the rocking rate,
     # from the base IMU gyro) plus a firmer upright (tilt) penalty.
-    ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.15)
+    ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.25)
     flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.5)
     # Keep the torso tall (~0.36 m) -> no crouch/sit-back.
     base_height = RewTerm(
@@ -173,12 +187,15 @@ class RSXRewards:
         func=mdp.track_lin_vel_xy_exp, weight=4.0, params={"command_name": "base_velocity", "std": 0.5}
     )
     track_ang_vel_z_exp = RewTerm(
-        func=mdp.track_ang_vel_z_exp, weight=2.0, params={"command_name": "base_velocity", "std": 0.5}
+        func=mdp.track_ang_vel_z_exp, weight=3.0, params={"command_name": "base_velocity", "std": 0.5}
     )
 
     # weight 4 (was 8): 8 over-did it into a high-knee/kicking march. 4 gives real steps at normal height.
+    # Our own copy of feet_air_time_positive_biped: identical math, but the "is moving" gate also
+    # counts a yaw command. The stock term is linear-gated, so it switched OFF during a turn in place
+    # -- removing the biggest stepping incentive exactly when pivot steps are needed.
     feet_air_time = RewTerm(
-        func=mdp.feet_air_time_positive_biped,
+        func=cast(Any, rsx_mdp.feet_air_time_biped),
         weight=4.0,
         params={
             "command_name": "base_velocity",
@@ -229,9 +246,11 @@ class RSXRewards:
     )
     # Standing-still upright posture: when no command, gait rewards gate off and the torso would
     # otherwise settle into a leaned-back brace. Pull the legs back to the default (upright) stance.
+    # Strong (-1.5): the robot was standing with feet splayed front-back. Pulling every leg joint
+    # back to default when idle brings the feet together into a neutral, upright stance.
     stand_still_posture = RewTerm(
         func=cast(Any, rsx_mdp.stand_still_joint_deviation_l1),
-        weight=-0.5,
+        weight=-1.5,
         params={
             "command_name": "base_velocity",
             "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_.*", ".*_ankle_.*"]),
@@ -245,6 +264,15 @@ class RSXRewards:
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_.*"),
         },
     )
+    # Straight-walk fore-aft SYMMETRY: penalize a persistent stagger (one foot parked ~10 cm ahead),
+    # which the phase clock alone does not prevent and which turning-training induced (measured cross-
+    # step symmetry regressed 0.89 -> 0.35). Gated to straight walking, so it does NOT fight the pivot
+    # stance of a turn. |EMA(x_left - x_right)| ~ 0.10 when staggered, ~0.02 when symmetric.
+    feet_balance = RewTerm(
+        func=cast(Any, rsx_mdp.feet_foreaft_balance),
+        weight=-3.0,
+        params={"command_name": "base_velocity", "alpha": 0.03, "cmd_threshold": 0.1, "ang_threshold": 0.3},
+    )
 
     # -0.75 (was -0.2): at -0.2 the hips could roll/yaw far, giving a "stepover/circling" swing (leg
     # rotates inward then swings out) instead of a straight sagittal step. Strong penalty keeps the
@@ -254,21 +282,25 @@ class RSXRewards:
         weight=-0.75,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_roll_joint", ".*_hip_yaw_joint"])},
     )
-    # Lock the arms' LATERAL freedom (shoulder roll/yaw) hard -> arms stay in the sagittal plane and
-    # cannot swing sideways into the body.
+    # Lock the arms' LATERAL freedom (shoulder roll/yaw) HARD (-1.5): the arms were still swinging
+    # sideways into the body. This keeps them strictly in the sagittal plane.
     joint_deviation_arms = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.8,
+        weight=-1.5,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder_roll_joint", ".*_shoulder_yaw_joint"])},
     )
-    # Arms held STILL and straight (no swing needed, per spec). Keeping shoulder-pitch + elbow near
-    # default makes the arms hang straight and quiet; with the roll/yaw lock above they never swing
-    # sideways into the body. (Active arm swing dropped: reward-shaped versions were gamed into static
-    # arms or regressed the gait to a shuffle -- not worth risking the walk.)
-    joint_deviation_arms_pitch = RewTerm(
+    # Keep the ELBOW straight (near default): straight-arm marching swing, no bent/raised elbow.
+    joint_deviation_elbow = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.3,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder_pitch_joint", ".*_elbow_pitch_joint"])},
+        weight=-0.5,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_elbow_pitch_joint"])},
+    )
+    # Marching fore-aft SHOULDER swing, phase-clock driven and contralateral (left leg forward -> right
+    # arm forward). Clock-driven target always moves, so static arms score low -> the arms must swing.
+    arm_swing = RewTerm(
+        func=cast(Any, rsx_mdp.arm_swing_phase),
+        weight=1.5,
+        params={"command_name": "base_velocity", "period": 0.7, "offset": 0.5, "gain": 0.35, "std": 0.25},
     )
 
 
@@ -423,6 +455,9 @@ class RsxFlatEnvCfg_PLAY(RsxFlatEnvCfg):
         self.commands.base_velocity.rel_standing_envs = 0.0
         self.commands.base_velocity.heading_command = False
         self.commands.base_velocity.rel_heading_envs = 0.0
+        # without this, 15% of PLAY envs get a pure in-place-turn command instead of the fixed forward
+        # command below -- which silently contaminated straight-walk / cross-step measurements
+        self.commands.base_velocity.rel_inplace_turn_envs = 0.0
         self.commands.base_velocity.ranges.lin_vel_x = (0.6, 0.6)
         self.commands.base_velocity.ranges.lin_vel_y = (0.0, 0.0)
         self.commands.base_velocity.ranges.ang_vel_z = (0.0, 0.0)

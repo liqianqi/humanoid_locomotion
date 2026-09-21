@@ -128,6 +128,9 @@ def _prepare_keyboard_commands(env_cfg: ManagerBasedRLEnvCfg):
         cmd_cfg.ranges.heading = (0.0, 0.0)
 
 
+_dbg_counter = [0]
+
+
 def _apply_keyboard_command(env, keyboard: Se2WASDKeyboard, allow_backward: bool):
     command = keyboard.advance().to(env.unwrapped.device)
     if not allow_backward:
@@ -138,6 +141,11 @@ def _apply_keyboard_command(env, keyboard: Se2WASDKeyboard, allow_backward: bool
     term.is_standing_env[:] = False
     term.time_left[:] = 1.0e6
     term.vel_command_b[:] = command
+    # DEBUG: print the live command ~2x/sec so you can see whether Q/E actually change wz.
+    _dbg_counter[0] += 1
+    if _dbg_counter[0] % 25 == 0:
+        c = command.tolist()
+        print(f"[cmd] vx={c[0]:+.2f}  vy={c[1]:+.2f}  wz={c[2]:+.2f}", flush=True)
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
