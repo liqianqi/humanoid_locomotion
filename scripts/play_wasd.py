@@ -207,5 +207,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
 
 
 if __name__ == "__main__":
+    # keep relative "logs/..." lookups and Hydra's "outputs/" anchored to the project root, not to
+    # whatever directory this was launched from
+    os.chdir(Path(__file__).resolve().parents[1])
     cast(Any, main)()
     simulation_app.close()

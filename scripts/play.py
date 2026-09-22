@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import runpy
 import sys
 from pathlib import Path
@@ -22,6 +23,8 @@ def _official_script() -> Path:
 
 
 if __name__ == "__main__":
+    # anchor relative "logs/..." lookups and Hydra's "outputs/" to the project root
+    os.chdir(Path(__file__).resolve().parents[1])
     play_py = _official_script()
     sys.path.insert(0, str(play_py.parent))
     runpy.run_path(str(play_py), run_name="__main__")
